@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rack Map — Demo</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: #0A1B2B; }
+  #root { min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 24px 12px; box-sizing: border-box; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useMemo } = React;
+
+// ---- small inline icon set (no external icon deps) ----
+function IconBase(props) {
+  const { size = 16, style = {}, children } = props;
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style}>
+      {children}
+    </svg>
+  );
+}
+const Search = (p) => <IconBase {...p}><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></IconBase>;
+const X = (p) => <IconBase {...p}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></IconBase>;
+const Plus = (p) => <IconBase {...p}><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></IconBase>;
+const PlusCircle = (p) => <IconBase {...p}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></IconBase>;
+const History = (p) => <IconBase {...p}><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 16 14"></polyline></IconBase>;
+const ChevronRight = (p) => <IconBase {...p}><polyline points="9 18 15 12 9 6"></polyline></IconBase>;
+const ChevronDown = (p) => <IconBase {...p}><polyline points="6 9 12 15 18 9"></polyline></IconBase>;
+const Server = (p) => <IconBase {...p}><rect x="2" y="2" width="20" height="8" rx="2"></rect><rect x="2" y="14" width="20" height="8" rx="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></IconBase>;
+const Trash2 = (p) => <IconBase {...p}><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></IconBase>;
+const RefreshCw = (p) => <IconBase {...p}><path d="M3 12a9 9 0 0 1 15.36-6.36L21 8"></path><polyline points="21 3 21 8 16 8"></polyline><path d="M21 12a9 9 0 0 1-15.36 6.36L3 16"></path><polyline points="3 21 3 16 8 16"></polyline></IconBase>;
+const ArrowRight = (p) => <IconBase {...p}><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></IconBase>;
+
+// ---- design tokens ----
+const T = {
+  bgDeep: "#0A1B2B", bgPanel: "#0F2437", bgPanelRaised: "#15304A",
+  gridLine: "#1F3E58", hairline: "#2A4A66", cyan: "#7FE0DD", amber: "#F0A857",
+  red: "#E08585", textPrimary: "#E7F2F8", textMuted: "#7E9BB0", occupied: "#2D5578",
+};
+const DISPLAY_FONT = '"Space Grotesk", "Arial Narrow", sans-serif';
+const BODY_FONT = '"IBM Plex Sans", ui-sans-serif, sans-serif';
+const MONO_FONT = '"IBM Plex Mono", ui-monospace, "SF Mono", monospace';
+const FONT_IMPORT = "@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');";
+
+const RACK_HEIGHT = 42;
+const ROWS = { A: [1, 2], B: [1, 2], C: [1, 2, 3] };
+
+function emptyRack() { return Array(RACK_HEIGHT).fill(null); }
+function rackLabel(key) {
+  const parts = key.split("-");
+  return parts[0] + "-" + String(parts[1]).padStart(2, "0");
+}
+
+function seedData() {
+  const data = {};
+  Object.entries(ROWS).forEach(([row, racks]) => { racks.forEach((r) => { data[row + "-" + r] = emptyRack(); }); });
+  const place = (key, u, asset) => { data[key][u - 1] = asset; };
+  place("C-3", 23, { tag: "A-100", vendor: "Cisco", model: "UCS C220 M6", owner: "Platform Team", status: "Active" });
+  place("C-3", 24, { tag: "A-101", vendor: "Cisco", model: "UCS C220 M6", owner: "Platform Team", status: "Active" });
+  place("C-3", 22, { tag: "A-099", vendor: "APC", model: "AP8941 PDU", owner: "Facilities", status: "Active" });
+  place("C-3", 12, { tag: "A-084", vendor: "Juniper", model: "EX4400-48P", owner: "Network Team", status: "Active" });
+  place("C-3", 1, { tag: "A-070", vendor: "APC", model: "Smart-UPS 3000", owner: "Facilities", status: "Active" });
+  place("C-2", 40, { tag: "A-062", vendor: "Dell EMC", model: "PowerEdge R750", owner: "Data Team", status: "Reserved" });
+  place("C-2", 39, { tag: "A-061", vendor: "Dell EMC", model: "PowerEdge R750", owner: "Data Team", status: "Active" });
+  place("C-2", 15, { tag: "A-045", vendor: "NetApp", model: "AFF A250", owner: "Storage Team", status: "Active" });
+  place("C-2", 14, { tag: "A-044", vendor: "NetApp", model: "AFF A250", owner: "Storage Team", status: "Active" });
+  place("B-1", 30, { tag: "A-030", vendor: "HPE", model: "ProLiant DL380", owner: "Platform Team", status: "Decommissioning" });
+  place("B-1", 29, { tag: "A-029", vendor: "HPE", model: "ProLiant DL380", owner: "Platform Team", status: "Active" });
+  place("B-1", 5, { tag: "A-012", vendor: "Juniper", model: "SRX4200", owner: "Network Team", status: "Active" });
+  place("B-2", 20, { tag: "A-055", vendor: "Supermicro", model: "SYS-2029U", owner: "Research", status: "Active" });
+  place("A-1", 41, { tag: "A-001", vendor: "APC", model: "AP7921B PDU", owner: "Facilities", status: "Active" });
+  place("A-1", 18, { tag: "A-008", vendor: "Cisco", model: "Catalyst 9300", owner: "Network Team", status: "Active" });
+  return data;
+}
+
+const STATUS_COLORS = { Active: T.occupied, Reserved: "#4A4A2E", Decommissioning: "#5A2E2E" };
+function rackFillFraction(rack) { const used = rack.filter(Boolean).length; return Math.round((used / rack.length) * 100); }
+function allRackKeys() { const keys = []; Object.entries(ROWS).forEach(([row, racks]) => racks.forEach((r) => keys.push(row + "-" + r))); return keys; }
+
+function RackMap() {
+  const [data, setData] = useState(seedData);
+  const [expandedRow, setExpandedRow] = useState("C");
+  const [selectedRack, setSelectedRack] = useState("C-3");
+  const [selectedU, setSelectedU] = useState(null);
+  const [search, setSearch] = useState("");
+  const [showLog, setShowLog] = useState(false);
+  const [log, setLog] = useState([
+    { time: "09:14", text: "A-100 added at C-03 · U23 by J. Doe" },
+    { time: "Yesterday", text: "A-061 moved to C-02 · U39 by S. Marsh" },
+  ]);
+  const [draft, setDraft] = useState(null);
+  const [modalTab, setModalTab] = useState(null);
+
+  const rack = data[selectedRack] || emptyRack();
+
+  const searchResults = useMemo(() => {
+    if (!search.trim()) return [];
+    const q = search.trim().toLowerCase();
+    const hits = [];
+    Object.entries(data).forEach(([key, slots]) => {
+      slots.forEach((asset, i) => {
+        if (asset && (asset.tag.toLowerCase().includes(q) || asset.model.toLowerCase().includes(q) || asset.vendor.toLowerCase().includes(q))) {
+          hits.push({ key, u: i + 1, asset });
+        }
+      });
+    });
+    return hits.slice(0, 6);
+  }, [search, data]);
+
+  const occupiedList = useMemo(() => {
+    const list = [];
+    Object.entries(data).forEach(([key, slots]) => { slots.forEach((asset, i) => { if (asset) list.push({ key, u: i + 1, asset }); }); });
+    return list.sort((a, b) => (a.key + a.u).localeCompare(b.key + b.u));
+  }, [data]);
+
+  function openSlot(u) {
+    setSelectedU(u);
+    const asset = rack[u - 1];
+    setDraft(asset ? { ...asset } : { tag: "", vendor: "", model: "", owner: "", status: "Active" });
+  }
+  function closeSlot() { setSelectedU(null); setDraft(null); }
+  function pushLog(text) { setLog((l) => [{ time: "Just now", text }, ...l].slice(0, 20)); }
+
+  function saveSlot() {
+    if (!draft.tag.trim()) return;
+    const wasEmpty = !rack[selectedU - 1];
+    setData((d) => { const next = { ...d, [selectedRack]: [...d[selectedRack]] }; next[selectedRack][selectedU - 1] = { ...draft }; return next; });
+    pushLog(draft.tag + " " + (wasEmpty ? "added" : "updated") + " at " + rackLabel(selectedRack) + " · U" + selectedU + " by You");
+    closeSlot();
+  }
+  function clearSlot() {
+    const asset = rack[selectedU - 1];
+    setData((d) => { const next = { ...d, [selectedRack]: [...d[selectedRack]] }; next[selectedRack][selectedU - 1] = null; return next; });
+    if (asset) pushLog(asset.tag + " removed from " + rackLabel(selectedRack) + " · U" + selectedU + " by You");
+    closeSlot();
+  }
+  function jumpTo(key, u) {
+    setSelectedRack(key); setExpandedRow(key.split("-")[0]); setSelectedU(null); setDraft(null);
+    setTimeout(() => {
+      setSelectedU(u);
+      const asset = data[key][u - 1];
+      setDraft(asset ? { ...asset } : { tag: "", vendor: "", model: "", owner: "", status: "Active" });
+    }, 0);
+  }
+
+  return (
+    <div style={{ fontFamily: BODY_FONT, background: T.bgDeep, color: T.textPrimary, minHeight: "600px", width: "100%", maxWidth: "1100px" }} className="rounded-lg overflow-hidden relative">
+      <style>{FONT_IMPORT}</style>
+      <div className="flex items-center justify-between px-5 py-4 flex-wrap gap-3" style={{ borderBottom: "1px solid " + T.hairline }}>
+        <div>
+          <div style={{ fontFamily: MONO_FONT, color: T.cyan, fontSize: "11px", letterSpacing: "0.15em" }}>DATA CENTER · SAMPLE DATA</div>
+          <div style={{ fontFamily: DISPLAY_FONT, fontWeight: 600, fontSize: "22px", marginTop: "2px" }}>Rack Map</div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <Search size={14} style={{ position: "absolute", left: "10px", top: "9px", color: T.textMuted }} />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search asset tag, model..."
+              style={{ fontFamily: MONO_FONT, fontSize: "13px", background: T.bgPanel, border: "1px solid " + T.hairline, color: T.textPrimary, padding: "7px 10px 7px 30px", borderRadius: "6px", width: "200px", outline: "none" }} />
+            {searchResults.length > 0 && (
+              <div style={{ position: "absolute", top: "36px", right: 0, width: "280px", background: T.bgPanelRaised, border: "1px solid " + T.hairline, borderRadius: "8px", zIndex: 20, overflow: "hidden" }}>
+                {searchResults.map((r, i) => (
+                  <button key={i} onClick={() => { jumpTo(r.key, r.u); setSearch(""); }} className="w-full text-left px-3 py-2 flex justify-between items-center"
+                    style={{ borderBottom: i < searchResults.length - 1 ? "1px solid " + T.hairline : "none", background: "transparent", color: T.textPrimary, fontSize: "13px" }}>
+                    <span style={{ fontFamily: MONO_FONT }}>{r.asset.tag}</span>
+                    <span style={{ color: T.textMuted, fontSize: "12px" }}>{rackLabel(r.key)} · U{r.u}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <button onClick={() => setShowLog((s) => !s)} className="flex items-center gap-2 px-3 py-2 rounded-md"
+            style={{ fontFamily: MONO_FONT, fontSize: "12px", background: showLog ? T.bgPanelRaised : "transparent", border: "1px solid " + T.hairline, color: T.textPrimary }}>
+            <History size={14} /> Activity
+          </button>
+          <button onClick={() => setModalTab("add")} className="flex items-center gap-2 px-3 py-2 rounded-md"
+            style={{ fontFamily: MONO_FONT, fontSize: "12px", background: T.cyan, color: T.bgDeep, fontWeight: 600, border: "none" }}>
+            <RefreshCw size={14} /> Update inventory
+          </button>
+        </div>
+      </div>
+
+      <div className="flex" style={{ minHeight: "560px" }}>
+        <div style={{ width: "220px", borderRight: "1px solid " + T.hairline, background: T.bgPanel }} className="py-3">
+          {Object.entries(ROWS).map(([row, racks]) => (
+            <div key={row}>
+              <button onClick={() => setExpandedRow(expandedRow === row ? null : row)} className="w-full flex items-center justify-between px-4 py-2"
+                style={{ color: T.textPrimary, fontFamily: MONO_FONT, fontSize: "13px" }}>
+                <span className="flex items-center gap-1">{expandedRow === row ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Row {row}</span>
+                <span style={{ color: T.textMuted, fontSize: "11px" }}>{racks.length} racks</span>
+              </button>
+              {expandedRow === row && (
+                <div className="pb-2">
+                  {racks.map((r) => {
+                    const key = row + "-" + r;
+                    const fill = rackFillFraction(data[key]);
+                    const active = selectedRack === key;
+                    return (
+                      <button key={key} onClick={() => { setSelectedRack(key); closeSlot(); }} className="w-full flex items-center justify-between px-4 py-2"
+                        style={{ background: active ? T.bgPanelRaised : "transparent", borderLeft: active ? "2px solid " + T.cyan : "2px solid transparent" }}>
+                        <span style={{ fontFamily: MONO_FONT, fontSize: "12px", color: active ? T.cyan : T.textMuted }}>{rackLabel(key)}</span>
+                        <span style={{ fontFamily: MONO_FONT, fontSize: "11px", color: T.textMuted }}>{fill}%</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex-1 flex justify-center py-6 px-4 overflow-auto">
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Server size={16} style={{ color: T.cyan }} />
+              <span style={{ fontFamily: DISPLAY_FONT, fontWeight: 600, fontSize: "16px" }}>{rackLabel(selectedRack)}</span>
+              <span style={{ color: T.textMuted, fontFamily: MONO_FONT, fontSize: "12px" }}>{RACK_HEIGHT}U · {rackFillFraction(rack)}% full</span>
+            </div>
+            <div className="flex" style={{ border: "1px solid " + T.hairline, borderRadius: "6px", overflow: "hidden" }}>
+              <div style={{ background: T.bgPanel }}>
+                {Array.from({ length: RACK_HEIGHT }, (_, i) => RACK_HEIGHT - i).map((u) => (
+                  <div key={u} style={{ height: "17px", width: "34px", display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: "6px", fontFamily: MONO_FONT, fontSize: "10px", color: T.textMuted, borderBottom: "1px solid " + T.gridLine }}>{u}</div>
+                ))}
+              </div>
+              <div style={{ background: T.bgDeep }}>
+                {Array.from({ length: RACK_HEIGHT }, (_, i) => RACK_HEIGHT - i).map((u) => {
+                  const asset = rack[u - 1];
+                  const isSelected = selectedU === u;
+                  return (
+                    <button key={u} onClick={() => openSlot(u)} style={{ height: "17px", width: "300px", display: "flex", alignItems: "center", padding: "0 10px", borderBottom: "1px solid " + T.gridLine, background: asset ? (STATUS_COLORS[asset.status] || T.occupied) : "transparent", outline: isSelected ? "2px solid " + T.cyan : "none", outlineOffset: "-2px" }}>
+                      {asset ? (
+                        <span className="flex items-center gap-2 truncate">
+                          <span style={{ fontFamily: MONO_FONT, fontSize: "11px", fontWeight: 600, color: T.textPrimary }}>{asset.tag}</span>
+                          <span style={{ fontSize: "11px", color: "#C8DCE8" }}>{asset.vendor} {asset.model}</span>
+                        </span>
+                      ) : (<span style={{ fontSize: "11px", color: T.gridLine }}>—</span>)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {selectedU && draft && !modalTab && (
+          <div style={{ width: "300px", borderLeft: "1px solid " + T.hairline, background: T.bgPanel }} className="p-4">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <div style={{ fontFamily: MONO_FONT, fontSize: "11px", color: T.cyan }}>{rackLabel(selectedRack)} · U{selectedU}</div>
+                <div style={{ fontFamily: DISPLAY_FONT, fontWeight: 600, fontSize: "15px" }}>{rack[selectedU - 1] ? "Edit asset" : "Add asset"}</div>
+              </div>
+              <button onClick={closeSlot}><X size={16} style={{ color: T.textMuted }} /></button>
+            </div>
+            <div className="flex flex-col gap-3">
+              <Field label="Asset tag" value={draft.tag} onChange={(v) => setDraft({ ...draft, tag: v })} mono placeholder="A-102" />
+              <Field label="Vendor" value={draft.vendor} onChange={(v) => setDraft({ ...draft, vendor: v })} placeholder="Cisco" />
+              <Field label="Model" value={draft.model} onChange={(v) => setDraft({ ...draft, model: v })} placeholder="UCS C220 M6" />
+              <Field label="Owner / team" value={draft.owner} onChange={(v) => setDraft({ ...draft, owner: v })} placeholder="Platform Team" />
+              <div>
+                <label style={{ fontSize: "11px", color: T.textMuted, fontFamily: MONO_FONT }}>Status</label>
+                <select value={draft.status} onChange={(e) => setDraft({ ...draft, status: e.target.value })}
+                  style={{ width: "100%", marginTop: "4px", background: T.bgDeep, border: "1px solid " + T.hairline, color: T.textPrimary, borderRadius: "6px", padding: "7px 8px", fontSize: "13px" }}>
+                  <option>Active</option><option>Reserved</option><option>Decommissioning</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button onClick={saveSlot} className="flex-1 flex items-center justify-center gap-1 py-2 rounded-md" style={{ background: T.cyan, color: T.bgDeep, fontWeight: 600, fontSize: "13px" }}><Plus size={14} /> Save</button>
+              {rack[selectedU - 1] && (<button onClick={clearSlot} className="flex items-center justify-center px-3 rounded-md" style={{ border: "1px solid " + T.hairline, color: T.amber }}><Trash2 size={14} /></button>)}
+            </div>
+          </div>
+        )}
+
+        {showLog && !selectedU && !modalTab && (
+          <div style={{ width: "280px", borderLeft: "1px solid " + T.hairline, background: T.bgPanel }} className="p-4">
+            <div style={{ fontFamily: DISPLAY_FONT, fontWeight: 600, fontSize: "14px", marginBottom: "10px" }}>Recent activity</div>
+            <div className="flex flex-col gap-3">
+              {log.map((entry, i) => (
+                <div key={i} style={{ borderLeft: "2px solid " + T.hairline, paddingLeft: "10px" }}>
+                  <div style={{ fontFamily: MONO_FONT, fontSize: "10px", color: T.textMuted }}>{entry.time}</div>
+                  <div style={{ fontSize: "12px", marginTop: "2px", color: T.textPrimary }}>{entry.text}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {modalTab && (<UpdateModal tab={modalTab} setTab={setModalTab} onClose={() => setModalTab(null)} data={data} setData={setData} occupiedList={occupiedList} pushLog={pushLog} />)}
+    </div>
+  );
+}
+
+function Field({ label, value, onChange, mono, placeholder }) {
+  return (
+    <div>
+      <label style={{ fontSize: "11px", color: T.textMuted, fontFamily: MONO_FONT }}>{label}</label>
+      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
+        style={{ width: "100%", marginTop: "4px", background: T.bgDeep, border: "1px solid " + T.hairline, color: T.textPrimary, borderRadius: "6px", padding: "7px 8px", fontSize: "13px", fontFamily: mono ? MONO_FONT : BODY_FONT }} />
+    </div>
+  );
+}
+function SelectField({ label, value, onChange, options, placeholder }) {
+  return (
+    <div>
+      <label style={{ fontSize: "11px", color: T.textMuted, fontFamily: MONO_FONT }}>{label}</label>
+      <select value={value} onChange={(e) => onChange(e.target.value)}
+        style={{ width: "100%", marginTop: "4px", background: T.bgDeep, border: "1px solid " + T.hairline, color: T.textPrimary, borderRadius: "6px", padding: "8px", fontSize: "13px", fontFamily: MONO_FONT }}>
+        <option value="">{placeholder}</option>
+        {options.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
+      </select>
+    </div>
+  );
+}
+
+function UpdateModal({ tab, setTab, onClose, data, setData, occupiedList, pushLog }) {
+  const [addRack, setAddRack] = useState("");
+  const [addU, setAddU] = useState("");
+  const [addForm, setAddForm] = useState({ tag: "", vendor: "", model: "", owner: "", status: "Active" });
+  const [moveFrom, setMoveFrom] = useState("");
+  const [moveToRack, setMoveToRack] = useState("");
+  const [moveToU, setMoveToU] = useState("");
+  const [removeTarget, setRemoveTarget] = useState("");
+
+  const rackOptions = allRackKeys().map((k) => ({ value: k, label: rackLabel(k) }));
+  function emptySlotOptions(rackKey) {
+    if (!rackKey || !data[rackKey]) return [];
+    return data[rackKey].map((asset, i) => ({ u: i + 1, asset })).filter((s) => !s.asset).map((s) => ({ value: String(s.u), label: "U" + s.u }));
+  }
+  function assetOptions() {
+    return occupiedList.map((o) => ({ value: o.key + "|" + o.u, label: o.asset.tag + " — " + rackLabel(o.key) + " U" + o.u + " (" + o.asset.vendor + " " + o.asset.model + ")" }));
+  }
+  function submitAdd() {
+    if (!addRack || !addU || !addForm.tag.trim()) return;
+    setData((d) => { const next = { ...d, [addRack]: [...d[addRack]] }; next[addRack][Number(addU) - 1] = { ...addForm }; return next; });
+    pushLog(addForm.tag + " added at " + rackLabel(addRack) + " · U" + addU + " by You");
+    onClose();
+  }
+  function submitMove() {
+    if (!moveFrom || !moveToRack || !moveToU) return;
+    const parts = moveFrom.split("|"); const fromKey = parts[0]; const fromU = parts[1];
+    const asset = data[fromKey][Number(fromU) - 1];
+    if (!asset) return;
+    setData((d) => { const next = { ...d, [fromKey]: [...d[fromKey]], [moveToRack]: [...d[moveToRack]] }; next[fromKey][Number(fromU) - 1] = null; next[moveToRack][Number(moveToU) - 1] = { ...asset }; return next; });
+    pushLog(asset.tag + " moved from " + rackLabel(fromKey) + " · U" + fromU + " to " + rackLabel(moveToRack) + " · U" + moveToU + " by You");
+    onClose();
+  }
+  function submitRemove() {
+    if (!removeTarget) return;
+    const parts = removeTarget.split("|"); const key = parts[0]; const u = parts[1];
+    const asset = data[key][Number(u) - 1];
+    if (!asset) return;
+    setData((d) => { const next = { ...d, [key]: [...d[key]] }; next[key][Number(u) - 1] = null; return next; });
+    pushLog(asset.tag + " removed from " + rackLabel(key) + " · U" + u + " by You");
+    onClose();
+  }
+
+  return (
+    <div style={{ position: "absolute", inset: 0, background: "rgba(5,12,20,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 30 }}>
+      <div style={{ width: "420px", maxWidth: "92vw", background: T.bgPanel, border: "1px solid " + T.hairline, borderRadius: "10px", padding: "20px" }}>
+        <div className="flex items-center justify-between mb-4">
+          <div style={{ fontFamily: DISPLAY_FONT, fontWeight: 600, fontSize: "17px" }}>Update inventory</div>
+          <button onClick={onClose}><X size={18} style={{ color: T.textMuted }} /></button>
+        </div>
+        <div className="flex gap-1 mb-5" style={{ background: T.bgDeep, borderRadius: "8px", padding: "4px" }}>
+          {[{ id: "add", label: "Add", icon: PlusCircle }, { id: "move", label: "Move", icon: ArrowRight }, { id: "remove", label: "Remove", icon: Trash2 }].map((item) => {
+            const Icon = item.icon;
+            return (
+              <button key={item.id} onClick={() => setTab(item.id)} className="flex-1 flex items-center justify-center gap-1 py-2 rounded-md"
+                style={{ background: tab === item.id ? T.bgPanelRaised : "transparent", color: tab === item.id ? T.cyan : T.textMuted, fontFamily: MONO_FONT, fontSize: "12px", fontWeight: 600 }}>
+                <Icon size={13} /> {item.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {tab === "add" && (
+          <div className="flex flex-col gap-3">
+            <div className="flex gap-2">
+              <div style={{ flex: 1 }}><SelectField label="Rack" value={addRack} onChange={(v) => { setAddRack(v); setAddU(""); }} options={rackOptions} placeholder="Choose rack" /></div>
+              <div style={{ flex: 1 }}><SelectField label="U slot" value={addU} onChange={setAddU} options={emptySlotOptions(addRack)} placeholder={addRack ? "Choose slot" : "Pick rack first"} /></div>
+            </div>
+            <Field label="Asset tag" value={addForm.tag} onChange={(v) => setAddForm({ ...addForm, tag: v })} mono placeholder="A-102" />
+            <div className="flex gap-2">
+              <div style={{ flex: 1 }}><Field label="Vendor" value={addForm.vendor} onChange={(v) => setAddForm({ ...addForm, vendor: v })} placeholder="Cisco" /></div>
+              <div style={{ flex: 1 }}><Field label="Model" value={addForm.model} onChange={(v) => setAddForm({ ...addForm, model: v })} placeholder="UCS C220 M6" /></div>
+            </div>
+            <Field label="Owner / team" value={addForm.owner} onChange={(v) => setAddForm({ ...addForm, owner: v })} placeholder="Platform Team" />
+            <button onClick={submitAdd} className="flex items-center justify-center gap-1 py-2 rounded-md mt-1" style={{ background: T.cyan, color: T.bgDeep, fontWeight: 600, fontSize: "13px" }}><Plus size={14} /> Add to rack</button>
+          </div>
+        )}
+        {tab === "move" && (
+          <div className="flex flex-col gap-3">
+            <SelectField label="Asset to move" value={moveFrom} onChange={setMoveFrom} options={assetOptions()} placeholder="Choose asset" />
+            <div className="flex gap-2">
+              <div style={{ flex: 1 }}><SelectField label="Destination rack" value={moveToRack} onChange={(v) => { setMoveToRack(v); setMoveToU(""); }} options={rackOptions} placeholder="Choose rack" /></div>
+              <div style={{ flex: 1 }}><SelectField label="Destination U" value={moveToU} onChange={setMoveToU} options={emptySlotOptions(moveToRack)} placeholder={moveToRack ? "Choose slot" : "Pick rack first"} /></div>
+            </div>
+            <button onClick={submitMove} className="flex items-center justify-center gap-1 py-2 rounded-md mt-1" style={{ background: T.cyan, color: T.bgDeep, fontWeight: 600, fontSize: "13px" }}><ArrowRight size={14} /> Move server</button>
+          </div>
+        )}
+        {tab === "remove" && (
+          <div className="flex flex-col gap-3">
+            <SelectField label="Asset to remove" value={removeTarget} onChange={setRemoveTarget} options={assetOptions()} placeholder="Choose asset" />
+            <button onClick={submitRemove} className="flex items-center justify-center gap-1 py-2 rounded-md mt-1" style={{ background: T.red, color: T.bgDeep, fontWeight: 600, fontSize: "13px" }}><Trash2 size={14} /> Remove from rack</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<RackMap />);
+</script>
+</body>
+</html>
